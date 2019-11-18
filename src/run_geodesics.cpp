@@ -18,19 +18,20 @@ namespace gproshan {
 
 void run_geodesics(const int & nargs, const char ** args)
 {
-	if(nargs < 3)
+	if(nargs < 4)
 	{
-		printf("./run_geodesics <inputfile> <outputfile>\n");
+		printf("./run_geodesics <inputfile> <outputfile> <method>\n");
 		printf("  <inputfile>  :  mesh file in format OFF or OBJ.\n");
 		printf("  <outputfile> :  output file location, will be in csv format.\n");
+		printf("  <method> :  1=ptp_cpu, 2=heatflow_cpu, 3=ptp_gpu, 4=heatflow_gpu.\n");
 
 		return;
 	}
 
 	const char * data_path = args[1];
 	const char * outputfile = args[2];
+	int method = atoi(args[3]);
 
-	int method = 4;
 	cout << "Handling input file '" << data_path << "', using method " << method << "\n";
 	cout << "Will write to output file '" << outputfile << "'.\n";
 
@@ -41,7 +42,7 @@ void run_geodesics(const int & nargs, const char ** args)
 	cout << "Mesh with " << n_vertices << " vertices loaded.\n";
 	distance_t * mean_dists = new distance_t[mesh->n_vertices()];	// mean distance from one vertex to all others. kept over all iterations, one value added in each iteration.
 
-	for(index_t source_vert = 0; source_vert < n_vertices; source_vert++) {
+	for(index_t source_vert = 0; source_vert < 3; source_vert++) {
 		vector <index_t> source = { source_vert };
 
 		index_t * toplesets = new index_t[n_vertices];
@@ -49,18 +50,21 @@ void run_geodesics(const int & nargs, const char ** args)
 		vector<index_t> limits;
   	//	cout << "Computing toplesets\n";
 
-		mesh = new che_off(data_path);
-		mesh->compute_toplesets(toplesets, sorted_index, limits, source);
-
-
 		double st;
 		distance_t * dist;
-    const toplesets_t & toplesets2 = {limits, sorted_index};
+
+		if(method == 1 || method == 3) {
+			//mesh = new che_off(data_path);
+			mesh->compute_toplesets(toplesets, sorted_index, limits, source);
+		}
+
+
 
 		if(method == 1) {
 			cout << "Running ptp_cpu method\n";
 			/* run_ptp_cpu(mesh, source, {limits, sorted_index}); */
 			dist = new distance_t[mesh->n_vertices()];	// geodesic distances of the source vertex to all other vertices. reset in each iteration.
+			const toplesets_t & toplesets2 = {limits, sorted_index};
 			parallel_toplesets_propagation_cpu(dist, mesh, source, toplesets2);
 		}
 
@@ -73,6 +77,7 @@ void run_geodesics(const int & nargs, const char ** args)
 #ifdef GPROSHAN_CUDA
 		if(method == 3) {
 		   dist = new distance_t[mesh->n_vertices()];
+			 const toplesets_t & toplesets2 = {limits, sorted_index};
 	     parallel_toplesets_propagation_coalescence_gpu(dist, mesh, source, toplesets2);
 
 		}
@@ -101,7 +106,7 @@ void run_geodesics(const int & nargs, const char ** args)
 
 	// FREE MEMORY
 
-		delete mesh;
+		//delete mesh;
 		delete [] toplesets;
 		delete [] sorted_index;
     if (dist) delete [] dist;
@@ -116,8 +121,8 @@ void run_geodesics(const int & nargs, const char ** args)
 
 	}
 
-	save_dists(outputfile, mean_dists, n_vertices); 
-
+	save_dists(outputfile, mean_dists, n_vertices);
+  printf("Saved mean distances to file '%s', exiting.\n", outputfile);
 
 }
 
