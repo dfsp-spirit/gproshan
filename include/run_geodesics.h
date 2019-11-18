@@ -8,6 +8,9 @@
 // geometry processing and shape analysis framework
 namespace gproshan {
 
+void save_dists(const char * outfile, distance_t * mean_dists, size_t num_dists);
+
+void run_geodesics(const int & nargs, const char ** args);
 
 /// Execute performance and accuracy test for ptp algorithm on cpu and gpu.
 void run_geodesics(const int & nargs, const char ** args);
@@ -34,4 +37,3 @@ double run_heat_method_gpu(che * mesh, const std::vector<index_t> & source);
 } // namespace gproshan
 
 #endif // RUN_GEODESICS_H
-

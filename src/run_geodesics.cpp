@@ -6,6 +6,8 @@
 
 #include <cassert>
 #include <iterator>
+#include<iostream>
+#include<fstream>
 
 using namespace std;
 
@@ -24,116 +26,85 @@ void run_geodesics(const int & nargs, const char ** args)
 
 		return;
 	}
-	
+
 	const char * data_path = args[1];
 	const char * outputfile = args[2];
 
-	/* 0=all, 1-5 to run only the specific method (see below) */
 	int method = 4;
+	cout << "Handling input file '" << data_path << "', using method " << method << "\n";
+	cout << "Will write to output file '" << outputfile << "'.\n";
 
-	/*string filename;
-	cout << "Give filename in dir " << data_path;
-	while(cin >> filename)
-	{
-	
-		cout << "Debugging var";
-		gproshan_debug_var(filename);
-		*/
+	che * mesh;
+	mesh = new che_off(data_path);
+	size_t n_vertices = mesh->n_vertices();
 
-		//string fullfile = data_path + filename + ".off";
-		cout << "Handling input file '" << data_path << "', using method " << method << "\n";
-		cout << "Will write to output file '" << outputfile << "'.\n";
-	
-		che * mesh;	
-		mesh = new che_off(data_path);
-		size_t n_vertices = mesh->n_vertices();
-
-		cout << "Mesh with " << n_vertices << " vertices loaded.\n";
+	cout << "Mesh with " << n_vertices << " vertices loaded.\n";
+	distance_t * mean_dists = new distance_t[mesh->n_vertices()];	// mean distance from one vertex to all others. kept over all iterations, one value added in each iteration.
 
 	for(index_t source_vert = 0; source_vert < n_vertices; source_vert++) {
 		vector <index_t> source = { source_vert };
-		//for(size_t source_vert = 0; source_vert < n_vertices; source_vert++) {
-			// hi
-		//}
 
-  	//	cout << "Source set to " << source_vert << " of " << n_vertices << ".\n";
-		
 		index_t * toplesets = new index_t[n_vertices];
 		index_t * sorted_index = new index_t[n_vertices];
 		vector<index_t> limits;
   	//	cout << "Computing toplesets\n";
-		
+
 		mesh = new che_off(data_path);
 		mesh->compute_toplesets(toplesets, sorted_index, limits, source);
 
-	//	cout << "Mesh topleset computed.\n";
-		
-		
-		// PERFORMANCE & ACCURACY __________________________________________________________________
 
 		double st;
 		distance_t * dist;
-                const toplesets_t & toplesets2 = {limits, sorted_index};
+    const toplesets_t & toplesets2 = {limits, sorted_index};
 
-		if(method == 0 || method == 1) {
-			cout << "Running fast marching method\n";
-			run_fast_marching(mesh, source);
-		}
-
-		
-		if(method == 0 || method == 2) {
+		if(method == 1) {
 			cout << "Running ptp_cpu method\n";
 			/* run_ptp_cpu(mesh, source, {limits, sorted_index}); */
-			dist = new distance_t[mesh->n_vertices()];
-
+			dist = new distance_t[mesh->n_vertices()];	// geodesic distances of the source vertex to all other vertices. reset in each iteration.
 			parallel_toplesets_propagation_cpu(dist, mesh, source, toplesets2);
 		}
 
-		if(method == 0 || method ==3) {
-                        /* run_heat_method_cholmod(che * mesh, const vector<index_t> & source) */
+		if(method == 2) {
 			dist = nullptr;
 			if(dist) delete [] dist;
 			dist = heat_flow(mesh, source, st);
 		}
 
 #ifdef GPROSHAN_CUDA
-		
-		if(method == 0 || method == 4) {
-	//	    cout << "Running ptp_gpu method\n";
-		    /* run_ptp_gpu(mesh, source, {limits, sorted_index}); */
-		    dist = new distance_t[mesh->n_vertices()];
-	            parallel_toplesets_propagation_coalescence_gpu(dist, mesh, source, toplesets2);
+		if(method == 3) {
+		   dist = new distance_t[mesh->n_vertices()];
+	     parallel_toplesets_propagation_coalescence_gpu(dist, mesh, source, toplesets2);
 
-		
-		   double dist_sum = 0.0;
-		   double dist_mean;
-		   for (size_t vidx = 0; vidx < n_vertices; vidx++) {
-    		      //printf("Dist to vert %d is: %f\n", vidx, dist[vidx]);
-			dist_sum += dist[vidx];
-		   }
-			dist_mean = dist_sum / (double)n_vertices;
-	//		printf("Mean dist is %f.\n", dist_mean);
 		}
 
 
-		if(method == 0 || method == 5) {
-		    cout << "Running heat method GPU\n";
-		    /* run_heat_method_gpu(mesh, source); */
+		if(method == 4) {
 		    dist = nullptr;
-	            if(dist) delete [] dist;	
-	            dist = heat_flow_gpu(mesh, source, st);
+	      if(dist) delete [] dist;
+	      dist = heat_flow_gpu(mesh, source, st);
 		}
 #else
 #endif // GPROSHAN_CUDA
-		
-		
-		
+
+		// Compute and save mean distance
+		double dist_sum = 0.0;
+	  double dist_mean_this_vert;
+	  for (size_t vidx = 0; vidx < n_vertices; vidx++) {
+					//printf("Dist to vert %d is: %f\n", vidx, dist[vidx]);
+		    dist_sum += dist[vidx];
+	  }
+		dist_mean_this_vert = dist_sum / (double)n_vertices;
+//		printf("Mean dist is %f.\n", dist_mean);
+	  mean_dists[source_vert] = dist_mean_this_vert;
+
+
+
 	// FREE MEMORY
 
 		delete mesh;
 		delete [] toplesets;
 		delete [] sorted_index;
-                delete [] dist;
+    if (dist) delete [] dist;
 
 		if(source_vert % 100 == 0) {
 		    printf("  At source vertex %d.\n", (int)source_vert);
@@ -145,8 +116,23 @@ void run_geodesics(const int & nargs, const char ** args)
 
 	}
 
-	
+
 }
+
+
+void save_dists(const char * outfile, distance_t * mean_dists, size_t num_dists) {
+	ofstream wf(outfile, ios::out | ios::binary);
+   if(!wf) {
+      cout << "Cannot open distance output file." << endl;
+   }
+   for(size_t i = 0; i < num_dists; i++)
+      wf.write((char *) &mean_dists[i], sizeof(distance_t));
+   wf.close();
+   if(!wf.good()) {
+      cout << "Error occurred while writing distances." << endl;
+   }
+}
+
 
 double run_fast_marching(che * mesh, const vector<index_t> & source)
 {
@@ -159,11 +145,11 @@ double run_fast_marching(che * mesh, const vector<index_t> & source)
 
 double run_ptp_cpu(che * mesh, const vector<index_t> & source, const toplesets_t & toplesets)
 {
-	
+
 	distance_t * dist = new distance_t[mesh->n_vertices()];
 	parallel_toplesets_propagation_cpu(dist, mesh, source, toplesets);
 
-	
+
 	delete [] dist;
 
 	return 0.;
@@ -172,7 +158,7 @@ double run_ptp_cpu(che * mesh, const vector<index_t> & source, const toplesets_t
 double run_heat_method_cholmod(che * mesh, const vector<index_t> & source)
 {
 	double st;
-	
+
 	distance_t * dist = nullptr;
 	if(dist) delete [] dist;
 	dist = heat_flow(mesh, source, st);
@@ -187,13 +173,13 @@ double run_heat_method_cholmod(che * mesh, const vector<index_t> & source)
 
 double run_ptp_gpu(che * mesh, const vector<index_t> & source, const toplesets_t & toplesets)
 {
-	
+
 	distance_t * dist = new distance_t[mesh->n_vertices()];
 	parallel_toplesets_propagation_coalescence_gpu(dist, mesh, source, toplesets);
 
 
 	delete [] dist;
-	
+
 	return 0.;
 }
 
@@ -201,7 +187,7 @@ double run_heat_method_gpu(che * mesh, const vector<index_t> & source)
 {
 	double st;
 	distance_t * dist = nullptr;
-	if(dist) delete [] dist;	
+	if(dist) delete [] dist;
 	dist = heat_flow_gpu(mesh, source, st);
 
 
@@ -216,4 +202,3 @@ double run_heat_method_gpu(che * mesh, const vector<index_t> & source)
 
 
 } // namespace gproshan
-
