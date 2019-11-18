@@ -116,6 +116,8 @@ void run_geodesics(const int & nargs, const char ** args)
 
 	}
 
+	save_dists(outputfile, mean_dists, n_vertices); 
+
 
 }
 
