@@ -128,16 +128,31 @@ void run_geodesics(const int & nargs, const char ** args)
 
 
 void save_dists(const char * outfile, distance_t * mean_dists, size_t num_dists) {
-	ofstream wf(outfile, ios::out | ios::binary);
-   if(!wf) {
-      cout << "Cannot open distance output file." << endl;
-   }
-   for(size_t i = 0; i < num_dists; i++)
-      wf.write((char *) &mean_dists[i], sizeof(distance_t));
-   wf.close();
-   if(!wf.good()) {
-      cout << "Error occurred while writing distances." << endl;
-   }
+	int method = 2;   // 1=binary, 2=CSV
+	if(method == 1) {
+		ofstream wf(outfile, ios::out | ios::binary);
+	   if(!wf) {
+	      cout << "Cannot open distance output file." << endl;
+	   }
+	   for(size_t i = 0; i < num_dists; i++)
+	      wf.write((char *) &mean_dists[i], sizeof(distance_t));
+	   wf.close();
+	   if(!wf.good()) {
+	      cout << "Error occurred while writing distances." << endl;
+	   }
+ }
+ if(method == 2) {
+	 fstream f;
+    f.open(outfile, ios::out);
+    for(size_t i=0; i < num_dists; i++) {
+			if(i < (num_dists-1)) {
+    		f << mean_dists[i] << ';';
+			} else {
+				f << mean_dists[i];
+			}
+		}
+    f.close();
+ }
 }
 
 
